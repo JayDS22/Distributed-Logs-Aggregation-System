@@ -1,0 +1,45 @@
+image:
+  repository: ghcr.io/jayds22/logstream-ingestor
+  tag: latest
+  pullPolicy: IfNotPresent
+
+replicaCount: 3
+
+resources:
+  requests:
+    cpu: 500m
+    memory: 256Mi
+  limits:
+    cpu: 2
+    memory: 1Gi
+
+autoscaling:
+  enabled: true
+  minReplicas: 3
+  maxReplicas: 30
+  targetCPUUtilization: 70
+  queueDepthTarget: 1000
+
+mongodb:
+  uri: mongodb://mongo-headless:27017/?replicaSet=rs0
+  database: logstream
+  collection: logs
+  ttlDays: 14
+
+ingestor:
+  workers: 32
+  bufferSize: 50000
+  batchSize: 100
+  flushMillis: 250
+
+alerter:
+  enabled: true
+  slackWebhook: ""
+
+service:
+  type: ClusterIP
+  port: 8080
+  metricsPort: 9090
+
+serviceMonitor:
+  enabled: false

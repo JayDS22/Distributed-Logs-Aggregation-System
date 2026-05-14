@@ -1,0 +1,49 @@
+# Default LogStream configuration. Every value below can be overridden via
+# environment variables (see internal/config/config.go).
+
+server:
+  host: 0.0.0.0
+  port: 8080
+  metrics_port: 9090
+  read_timeout: 15s
+  write_timeout: 15s
+  shutdown_timeout: 30s
+
+mongodb:
+  uri: mongodb://localhost:27017
+  database: logstream
+  collection: logs
+  rules_collection: alert_rules
+  connect_timeout: 10s
+  max_pool_size: 200
+  min_pool_size: 10
+  ttl_days: 14
+  time_series: true
+
+kafka:
+  enabled: false
+  brokers:
+    - localhost:9092
+  topic: logs
+  group_id: logstream-ingestor
+
+redis:
+  enabled: false
+  addr: localhost:6379
+  db: 0
+  ttl_secs: 300
+
+ingestor:
+  workers: 16
+  buffer_size: 20000
+  batch_size: 100
+  flush_millis: 250
+
+alerter:
+  enabled: false
+  slack_webhook: ""
+  pagerduty_key: ""
+
+log:
+  level: info
+  format: json

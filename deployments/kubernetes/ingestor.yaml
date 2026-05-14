@@ -1,0 +1,165 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: logstream
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: logstream-config
+  namespace: logstream
+data:
+  config.yaml: |
+    server:
+      host: 0.0.0.0
+      port: 8080
+      metrics_port: 9090
+    mongodb:
+      database: logstream
+      collection: logs
+      time_series: true
+      ttl_days: 14
+      max_pool_size: 200
+    ingestor:
+      workers: 32
+      buffer_size: 50000
+      batch_size: 100
+      flush_millis: 250
+    log:
+      level: info
+      format: json
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: logstream-secrets
+  namespace: logstream
+type: Opaque
+stringData:
+  MONGODB_URI: mongodb://mongo-headless:27017/?replicaSet=rs0
+  SLACK_WEBHOOK: ""
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ingestor
+  namespace: logstream
+  labels:
+    app: ingestor
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: ingestor
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: ingestor
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+    spec:
+      terminationGracePeriodSeconds: 60
+      containers:
+        - name: ingestor
+          image: ghcr.io/jayds22/logstream-ingestor:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+            - name: metrics
+              containerPort: 9090
+          envFrom:
+            - secretRef:
+                name: logstream-secrets
+          env:
+            - name: LOG_LEVEL
+              value: info
+          volumeMounts:
+            - name: config
+              mountPath: /app/configs
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "256Mi"
+            limits:
+              cpu: "2"
+              memory: "1Gi"
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sh", "-c", "sleep 10"]
+      volumes:
+        - name: config
+          configMap:
+            name: logstream-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ingestor
+  namespace: logstream
+spec:
+  type: ClusterIP
+  selector:
+    app: ingestor
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+    - name: metrics
+      port: 9090
+      targetPort: metrics
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: ingestor
+  namespace: logstream
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: ingestor
+  minReplicas: 3
+  maxReplicas: 30
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Pods
+      pods:
+        metric:
+          name: logstream_queue_depth
+        target:
+          type: AverageValue
+          averageValue: "1000"
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 30
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 30
+    scaleDown:
+      stabilizationWindowSeconds: 300

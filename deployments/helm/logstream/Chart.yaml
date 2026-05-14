@@ -1,0 +1,12 @@
+apiVersion: v2
+name: logstream
+description: High-performance distributed log aggregation platform
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+home: https://github.com/JayDS22/logstream
+sources:
+  - https://github.com/JayDS22/logstream
+maintainers:
+  - name: Jay Guwalani
+    url: https://github.com/JayDS22

@@ -1,0 +1,81 @@
+version: "3.9"
+
+services:
+  mongodb:
+    image: mongo:7.0
+    container_name: logstream-mongo
+    command: ["--replSet", "rs0", "--bind_ip_all", "--port", "27017"]
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: |
+        mongosh --quiet --eval '
+          try { rs.status().ok } catch (e) {
+            rs.initiate({_id: "rs0", members: [{_id: 0, host: "mongodb:27017"}]});
+          }
+        '
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  redis:
+    image: redis:7-alpine
+    container_name: logstream-redis
+    ports:
+      - "6379:6379"
+
+  ingestor:
+    build:
+      context: ../..
+      dockerfile: deployments/docker/Dockerfile
+      args:
+        TARGET: ingestor
+    container_name: logstream-ingestor
+    ports:
+      - "8080:8080"
+      - "9090:9090"
+    environment:
+      MONGODB_URI: mongodb://mongodb:27017/?replicaSet=rs0
+      REDIS_ADDR: redis:6379
+      LOG_LEVEL: info
+    depends_on:
+      mongodb:
+        condition: service_healthy
+
+  alerter:
+    build:
+      context: ../..
+      dockerfile: deployments/docker/Dockerfile
+      args:
+        TARGET: alerter
+    container_name: logstream-alerter
+    ports:
+      - "9091:9090"
+    environment:
+      MONGODB_URI: mongodb://mongodb:27017/?replicaSet=rs0
+      LOG_LEVEL: info
+    depends_on:
+      mongodb:
+        condition: service_healthy
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: logstream-prometheus
+    ports:
+      - "9095:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: logstream-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin
+
+volumes:
+  mongo_data:
