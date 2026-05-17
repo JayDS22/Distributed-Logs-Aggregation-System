@@ -28,39 +28,31 @@
 
 ## Architecture
 
-```
-                                                          ┌────────────────────┐
-                                                          │   Outputs / Sinks  │
- ┌────────────────┐    ┌──────────────────┐               │                    │
- │  Log Sources   │    │  Ingestion (Go)  │               │  • Grafana         │
- │                │    │                  │               │  • Slack webhooks  │
- │  • 1000+ μsvcs ├───►│  Worker pool     ├──┐            │  • PagerDuty       │
- │  • k8s pods    │    │  Buffered chan   │  │            │  • S3 backups      │
- │  • Lambda/edge │    │  Batch (100/req) │  │            └─────────▲──────────┘
- └────────────────┘    │  Dedupe + schema │  │                      │
-                       │  HPA on q-depth  │  │                      │
-                       └──────┬───────────┘  │                      │
-                              │              │                      │
-                              ▼              ▼                      │
-                       ┌─────────────────────────────┐    ┌─────────┴──────────┐
-                       │     MongoDB (sharded)       │    │  Analytics layer   │
-                       │                             │    │                    │
-                       │  • Time-series collection   │    │  • $facet pipelines│
-                       │  • Hashed shard:            ├───►│  • Materialized    │
-                       │    source_id + timestamp    │    │    hourly/daily    │
-                       │  • TTL retention            │    │  • Redis cache     │
-                       │  • Compound indexes         │    │    (-65% reads)    │
-                       └──────────────┬──────────────┘    └─────────┬──────────┘
-                                      │                             │
-                                      ▼                             │
-                       ┌─────────────────────────────┐               │
-                       │     Change-stream alerter   │               │
-                       │                             │               │
-                       │  • Regex rule eval          ├───────────────┘
-                       │  • Circuit breaker          │
-                       │  • Slack / PagerDuty fanout │
-                       │  • <200ms end-to-end        │
-                       └─────────────────────────────┘
+```mermaid
+flowchart LR
+    subgraph SRC[Log Sources]
+        S1[1000+ microservices]
+        S2[k8s pods]
+        S3[Lambda / edge]
+    end
+    subgraph ING[Ingestion Go]
+        I[Worker pool<br/>Buffered channels<br/>Batch 100/req<br/>Dedupe + schema<br/>HPA on queue depth]
+    end
+    subgraph DB[MongoDB sharded]
+        M[Time-series collection<br/>Hashed shard: source_id + timestamp<br/>TTL retention, compound indexes]
+    end
+    subgraph AN[Analytics Layer]
+        A[$facet pipelines<br/>Materialized hourly/daily<br/>Redis cache: -65% reads]
+    end
+    subgraph ALERT[Change-stream Alerter]
+        AL[Regex rule eval<br/>Circuit breaker<br/>Slack / PagerDuty fanout<br/>&lt;200ms end-to-end]
+    end
+    subgraph OUT[Outputs / Sinks]
+        O[Grafana, Slack webhooks<br/>PagerDuty, S3 backups]
+    end
+    SRC --> ING --> DB
+    DB --> AN --> OUT
+    DB --> ALERT --> OUT
 ```
 
 A live interactive version of this diagram (with hover tooltips per stage) is bundled in the demo at [`/demo/index.html`](./demo/index.html).
@@ -276,7 +268,7 @@ The ingestion pipeline is a classic worker-pool over a buffered channel:
 ## Alerting flow
 
 ```
-mongo change stream  ─►  rule evaluator  ─►  circuit breaker  ─►  webhook
+mongo change stream  ─  rule evaluator  ─  circuit breaker  ─  webhook
         │                      │                    │
         │                      │                    └─ trips after 5 consecutive failures, half-opens after 20s
         │                      │
@@ -384,4 +376,4 @@ MIT — see [LICENSE](LICENSE).
 
 **Jay Guwalani** — [github.com/JayDS22](https://github.com/JayDS22)
 
-PRs welcome. If this saved you time, ⭐ the repo.
+PRs welcome. If this saved you time,  the repo.
